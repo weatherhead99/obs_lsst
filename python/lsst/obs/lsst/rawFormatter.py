@@ -55,6 +55,8 @@ class LsstCamRawFormatter(FitsRawFormatterBase):
     filterDefinitions = LsstCam.filterDefinitions
     _instrument = LsstCam
 
+    _extraFitsHeaders = ["REB_COND", "CONFIG_COND"]
+
     def readMetadata(self):
         """Read all header metadata directly into a PropertyList.
 
@@ -68,15 +70,29 @@ class LsstCamRawFormatter(FitsRawFormatterBase):
         """
         file = self.fileDescriptor.location.path
         phdu = lsst.afw.fits.readMetadata(file, 0)
+
         if "INHERIT" in phdu:
             # Trust the inheritance flag
-            return super().readMetadata()
+            base_md =  super().readMetadata()
 
         # Merge ourselves
-        md = merge_headers([phdu, lsst.afw.fits.readMetadata(file)],
-                           mode="overwrite")
-        fix_header(md)
-        return md
+        else:
+            base_md = merge_headers([phdu, lsst.afw.fits.readMetadata(file)],
+                               mode="overwrite")
+            fix_header(base_md)
+
+        ehdrs = []
+        for hduname in self._extraFitsHeaders:
+            try:
+                ehdr = lsst.afw.fits.readMetadata(file, hduname)
+                ehdrs.append(ehdr)
+            except lsst.afw.fits.FitsError:
+                #can ignore, the header just doesn't exist in this file
+                continue
+
+        final_md = merge_headers([base_md] + ehdrs)
+        fix_header(final_md)
+        return final_md
 
     def getDetector(self, id):
         in_detector = self._instrument.getCamera()[id]
